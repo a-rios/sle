@@ -19,7 +19,7 @@ class RobertaFinetuner(pl.LightningModule):
         num_labels = 1 # regression
         self.hparams["num_labels"] = num_labels
 
-        self.model = RobertaForSequenceClassification.from_pretrained(model_name_or_path, num_labels=num_labels)
+        self.model = RobertaForSequenceClassification.from_pretrained(model_name_or_path, num_labels=num_labels, cache_dir=self.hparams['cache_dir'])
         print(f"Initial RobertaForSequenceClassification model loaded from {model_name_or_path}.")
 
         if tokenizer is None:
@@ -32,10 +32,11 @@ class RobertaFinetuner(pl.LightningModule):
 
         if "hidden_dropout_prob" in self.hparams and self.hparams.hidden_dropout_prob is not None:
             self.model.config.hidden_dropout_prob = self.hparams.hidden_dropout_prob
+        self.validation_step_outputs = []
 
     def forward(self, input_ids, **kwargs):
         return self.model(input_ids, **kwargs)
-    
+
     def training_step(self, batch, batch_idx):
         output = self.model(**{k:v for k, v in batch.items() if k not in ["doc_ids"]}, return_dict=True)
         loss = output["loss"]
@@ -63,18 +64,19 @@ class RobertaFinetuner(pl.LightningModule):
         if self.has_param("log_doc_mae"):
             output["doc_ids"] = batch["doc_ids"]
 
+        self.validation_step_outputs.append(output)
         return output
 
-    def validation_epoch_end(self, outputs, prefix="val"):
-        loss = torch.stack([x["loss"] for x in outputs]).mean()
+    def on_validation_epoch_end(self, prefix="val"):
+        loss = torch.stack([x["loss"] for x in self.validation_step_outputs]).mean()
         self.log(f"{prefix}_loss", loss)
 
         # compute document-level MAE when doing regression
         if self.has_param("log_doc_mae"):
-            flat_preds = [y.item() for ys in outputs for y in ys["preds"]]
-            flat_labels = [y.item() for ys in outputs for y in ys["labels"]]
+            flat_preds = [y.item() for ys in self.validation_step_outputs for y in ys["preds"]]
+            flat_labels = [y.item() for ys in self.validation_step_outputs for y in ys["labels"]]
 
-            doc_ids = [y for ys in outputs for y in ys["doc_ids"]]
+            doc_ids = [y for ys in self.validation_step_outputs for y in ys["doc_ids"]]
             doc_preds = {}
             doc_labs = {}
             for i in range(len(doc_ids)):
@@ -90,8 +92,9 @@ class RobertaFinetuner(pl.LightningModule):
                 doc_means.append(np.mean(v))
                 doc_gts.append(np.mean(doc_labs[k]))
             self.log(f"{prefix}_doc_mae", mean_absolute_error(doc_gts, doc_means))
+            self.validation_step_outputs.clear()
 
-        return {f"{prefix}_loss": loss}
+        # return {f"{prefix}_loss": loss}
 
     def configure_optimizers(self):
         param_optimizer = list(self.model.named_parameters())
@@ -107,7 +110,7 @@ class RobertaFinetuner(pl.LightningModule):
             },
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=self.hparams.learning_rate)
-        
+
         # use a learning rate scheduler if specified
         if self.hparams.lr_scheduler:
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
@@ -145,7 +148,7 @@ class RobertaFinetuner(pl.LightningModule):
         parser.add_argument("--save_dir", type=str, default=None, required=False,)
         parser.add_argument("--checkpoint", type=str, default=None, required=False,)
         parser.add_argument("--wandb_id", type=str, default=None, required=False,)
-        
+
         parser.add_argument("--train_file", type=str, default=None, required=False)
         parser.add_argument("--val_file", type=str, default=None, required=False)
         parser.add_argument("--x_col", type=str, default="x", required=False,)
@@ -167,5 +170,7 @@ class RobertaFinetuner(pl.LightningModule):
 
         parser.add_argument("--log_doc_mae", action="store_true")
         parser.add_argument("--no_log", action="store_true")
+        parser.add_argument("--cache_dir", type=str, metavar="PATH", help="Cache directory for huggingface models")
+        parser.add_argument("--val_check_interval", type=float, default=0.25)
 
         return parser

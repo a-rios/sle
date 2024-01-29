@@ -15,10 +15,11 @@ if __name__ == '__main__':
 
     # add model specific args to parser
     parser = RobertaFinetuner.add_model_specific_args(parser)
+    # args = parser.parse_args()
 
     # add all the available trainer options to argparse
     # ie: now --gpus --num_nodes ... --fast_dev_run all work in the cli
-    parser = pl.Trainer.add_argparse_args(parser)
+    # parser = pl.Trainer.add_argparse_args(parser)
     args = parser.parse_args()
 
     # prepare data module and finetuner class
@@ -47,8 +48,7 @@ if __name__ == '__main__':
             checkpoint_callback = [ModelCheckpoint(monitor=args.ckpt_metric, mode=mode, save_last=True)]
         logger = wandb_logger
 
-    trainer = pl.Trainer.from_argparse_args(
-        args,
+    trainer = pl.Trainer(
         val_check_interval=args.val_check_interval,
         logger=logger,
         accelerator="gpu",
