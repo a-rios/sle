@@ -78,6 +78,7 @@ def capito_csv(infile, out_csv):
                 sentences = split_sentences(text)
                 label = map_labels[level]
                 for sentence in sentences:
+                    sentence = sentence.strip()
                     sample_key = f"{doc_id},{sentence},{label}"
                     samples[sample_key] = [doc_id, sentence, label] # dict to avoid duplicates
         write_csv(samples, out_csv)
