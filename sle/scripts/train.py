@@ -74,5 +74,5 @@ if __name__ == '__main__':
         enable_progress_bar=True)
 
     trainer.fit(model, dm)
-    model.save_pretrained(args.save_dir + "/" + args.save_prefix)
-    model.tokenizer.save_pretrained(args.save_dir + "/" + args.save_prefix)
+    model.model.save_pretrained(args.save_dir + "/" + args.save_prefix)
+    model.model.tokenizer.save_pretrained(args.save_dir + "/" + args.save_prefix)
